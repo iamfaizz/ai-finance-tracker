@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -12,8 +12,14 @@ export default function Dashboard() {
   const [budgets, setBudgets] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ category_id: '', amount: '', type: 'expense', note: '', date: new Date().toISOString().split('T')[0] });
+  const [showChat, setShowChat] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const chatEndRef = useRef(null);
 
   useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   const fetchAll = async () => {
     const [t, c, b] = await Promise.all([
@@ -36,6 +42,21 @@ export default function Dashboard() {
   const deleteTransaction = async (id) => {
     await api.delete(`/transactions/${id}`);
     fetchAll();
+  };
+
+  const sendMessage = async () => {
+    if (!chatInput.trim()) return;
+    const userMsg = { role: 'user', content: chatInput };
+    setMessages(prev => [...prev, userMsg]);
+    setChatInput('');
+    setAiLoading(true);
+    try {
+      const res = await api.post('/chat', { message: chatInput });
+      setMessages(prev => [...prev, { role: 'ai', content: res.data.reply }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'ai', content: 'Sorry, something went wrong.' }]);
+    }
+    setAiLoading(false);
   };
 
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0);
@@ -167,6 +188,52 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* AI Chat Bubble */}
+      <div className="fixed bottom-6 right-6 z-50">
+        {showChat && (
+          <div className="bg-white rounded-xl shadow-2xl w-80 h-96 flex flex-col mb-4">
+            <div className="bg-indigo-600 text-white p-4 rounded-t-xl flex justify-between items-center">
+              <h3 className="font-semibold">💬 AI Finance Assistant</h3>
+              <button onClick={() => setShowChat(false)} className="text-white hover:text-gray-200">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {messages.length === 0 && (
+                <p className="text-gray-400 text-sm text-center mt-8">Ask me anything about your spending!</p>
+              )}
+              {messages.map((m, i) => (
+                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-xs p-3 rounded-xl text-sm ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                    {m.content}
+                  </div>
+                </div>
+              ))}
+              {aiLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-100 p-3 rounded-xl text-sm text-gray-500">Thinking...</div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+            <div className="p-3 border-t flex gap-2">
+              <input
+                className="flex-1 border rounded-lg p-2 text-sm"
+                placeholder="Ask about your spending..."
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && sendMessage()}
+              />
+              <button onClick={sendMessage} className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-indigo-700">Send</button>
+            </div>
+          </div>
+        )}
+        <button
+          onClick={() => setShowChat(!showChat)}
+          className="bg-indigo-600 text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl hover:bg-indigo-700 ml-auto"
+        >
+          💬
+        </button>
       </div>
     </div>
   );
